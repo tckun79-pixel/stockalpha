@@ -34,6 +34,8 @@ from modules.comparison    import (
     build_performance_comparison, build_radar_chart,
     build_correlation_matrix,
 )
+from modules.ai_summary import get_ai_summary, parse_ai_sections
+
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -100,11 +102,17 @@ for _key, _default in [
     ("perf",            None),
     ("chart",           None),
     ("fc",              None),
+    ("ai_summary",      None),
+    ("cmp_datasets",    {}),
+    ("cmp_period",      "1Y"),
+    ("cmp_tickers",     ""),
+    ("cmp_ran",         False),
 ]:
     if _key not in st.session_state:
         st.session_state[_key] = _default
 
-# ── LANDING (only shown before first analysis) ────────────────────────────────
+
+# ── LANDING (only before first analysis) ─────────────────────────────────────
 if not st.session_state["analysis_done"] and not (run_btn and ticker_input):
     st.markdown("""
     <div style="text-align:center;padding:60px 20px 40px">
@@ -147,8 +155,7 @@ if not st.session_state["analysis_done"] and not (run_btn and ticker_input):
     st.stop()
 
 
-# NEW
-# ── FETCH & CACHE when Run button clicked ─────────────────────────────────────
+# ── FETCH & RUN ANALYSIS (only when Run button clicked) ───────────────────────
 if run_btn and ticker_input:
     with st.spinner(f"⏳ Fetching data for **{ticker_input}**..."):
         _data = fetch_all(ticker_input, market_sel)
@@ -160,30 +167,49 @@ if run_btn and ticker_input:
 
     with st.spinner("⚙️ Running fundamental analysis..."):
         _fund = compute_quarterly_metrics(
-            _data["income_stmt"], _data["balance_sheet"], _data["cashflow"], _data["info"]
+            _data["income_stmt"], _data["balance_sheet"],
+            _data["cashflow"], _data["info"],
         )
+
     with st.spinner("📈 Computing technical indicators..."):
         _df_tech = compute_indicators(_data["price_history"])
         _sr      = find_support_resistance(_df_tech)
         _signals = get_indicator_signals(_df_tech)
         _perf    = compute_performance(_df_tech)
         _chart   = build_chart(_df_tech)
+
     with st.spinner("🔮 Generating price forecast..."):
         _fc = run_forecast(_data["price_history"], _data["info"], _fund)
+
+    with st.spinner("🤖 Generating AI summary (DeepSeek V3.2)..."):
+        _ai = get_ai_summary(
+            _data["ticker"],
+            _data["info"],
+            _fund,
+            _fc,
+            _perf,
+            _signals,
+        )
 
     st.session_state.update({
         "analysis_done": True,
         "analysis_data": _data,
-        "fund":    _fund,
-        "df_tech": _df_tech,
-        "sr":      _sr,
-        "signals": _signals,
-        "perf":    _perf,
-        "chart":   _chart,
-        "fc":      _fc,
+        "fund":          _fund,
+        "df_tech":       _df_tech,
+        "sr":            _sr,
+        "signals":       _signals,
+        "perf":          _perf,
+        "chart":         _chart,
+        "fc":            _fc,
+        "ai_summary":    _ai,
+        # Reset compare when new ticker is run
+        "cmp_datasets":  {},
+        "cmp_ran":       False,
+        "cmp_tickers":   "",
     })
 
-# ── LOAD FROM SESSION STATE (every rerun uses cached results) ─────────────────
+
+# ── LOAD FROM SESSION STATE ───────────────────────────────────────────────────
 data          = st.session_state["analysis_data"]
 info          = data["info"]
 price_history = data["price_history"]
@@ -196,9 +222,48 @@ signals       = st.session_state["signals"]
 perf          = st.session_state["perf"]
 chart         = st.session_state["chart"]
 fc            = st.session_state["fc"]
+ai_summary    = st.session_state["ai_summary"]
 
 currency  = get_currency_symbol(market, info)
 cur_price = get_current_price(info) or float(price_history["Close"].iloc[-1])
+
+
+# ── HEADER BANNER ─────────────────────────────────────────────────────────────
+badge_cls = {"US": "badge-us", "SGX": "badge-sg", "HKEX": "badge-hk"}.get(market, "badge-us")
+badge_lbl = {"US": "NYSE/NASDAQ", "SGX": "SGX", "HKEX": "HKEX"}.get(market, market)
+company   = info.get("longName") or info.get("shortName") or ticker
+chg       = info.get("regularMarketChange") or 0
+chg_pct   = info.get("regularMarketChangePercent") or 0
+chg_col   = "#26a69a" if chg >= 0 else "#ef5350"
+chg_arrow = "▲" if chg >= 0 else "▼"
+mcap      = info.get("marketCap")
+mcap_str  = (f"{currency}{mcap/1e12:.2f}T" if mcap and mcap >= 1e12 else
+             f"{currency}{mcap/1e9:.2f}B"  if mcap and mcap >= 1e9  else
+             f"{currency}{mcap/1e6:.0f}M"  if mcap else "—")
+
+st.markdown(f"""
+<div style="background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;
+            padding:18px 24px;margin-bottom:20px;display:flex;
+            justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+  <div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:1.3rem;font-weight:700;color:#e8eaf0">{company}</span>
+      <span style="font-size:.85rem;color:#8b8fa8;font-family:'Courier New',monospace">{ticker}</span>
+      <span class="exchange-badge {badge_cls}">{badge_lbl}</span>
+    </div>
+    <div style="margin-top:4px;font-size:.75rem;color:#5a5d6e">
+      Data via yfinance · {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}
+    </div>
+  </div>
+  <div style="text-align:right">
+    <div style="font-size:1.6rem;font-weight:700;color:#e8eaf0;
+                font-family:'Courier New',monospace">{currency}{cur_price:,.2f}</div>
+    <div style="font-size:.82rem;color:{chg_col}">
+      {chg_arrow} {abs(chg):.2f} ({abs(chg_pct * 100):.2f}%)</div>
+    <div style="font-size:.72rem;color:#5a5d6e">Mkt Cap: {mcap_str}</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4 = st.tabs([
@@ -376,7 +441,7 @@ with tab2:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — FORECAST
+# TAB 3 — FORECAST + AI SUMMARY
 # ══════════════════════════════════════════════════════════════════════════════
 with tab3:
     st.error(fc["disclaimer"], icon="⚠️")
@@ -414,6 +479,62 @@ with tab3:
                   &lt;10% = High · &lt;25% = Medium · else Low.
                 </div>""", unsafe_allow_html=True)
 
+    # ── AI SUMMARY ────────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 🤖 AI Analyst Summary")
+
+    if ai_summary is None:
+        st.info("Run analysis to generate AI summary.")
+    elif ai_summary.get("error"):
+        st.warning(f"AI summary unavailable: {ai_summary['error']}")
+    else:
+        model_lbl = ai_summary.get("model", "DeepSeek V3.2 via OpenRouter")
+        st.markdown(
+            f"<div style='font-size:.72rem;color:#5a5d6e;margin-bottom:14px'>"
+            f"🧠 {model_lbl} · temperature 0.2 · objective mode"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        sections_meta = {
+            "Business & Growth": ("📈", "#60a5fa"),
+            "Financial Health":  ("🏦", "#00d4aa"),
+            "Valuation":         ("⚖️", "#f59e0b"),
+            "Key Risks":         ("⚠️", "#ef5350"),
+        }
+
+        parsed = parse_ai_sections(ai_summary["text"])
+
+        ai_col1, ai_col2 = st.columns(2)
+        for i, (header, (icon, color)) in enumerate(sections_meta.items()):
+            col = ai_col1 if i % 2 == 0 else ai_col2
+            body = parsed.get(header, "—")
+            # Convert markdown bullets to HTML bullets
+            body_html = (body
+                         .replace("\n- ", "<br>• ")
+                         .replace("\n* ", "<br>• "))
+            if body_html.startswith("- ") or body_html.startswith("* "):
+                body_html = "• " + body_html[2:]
+            with col:
+                st.markdown(f"""
+                <div style="background:#1a1d27;border:1px solid #2a2d3a;
+                            border-left:3px solid {color};border-radius:8px;
+                            padding:16px 18px;margin-bottom:12px;min-height:120px">
+                  <div style="font-size:.8rem;font-weight:600;color:{color};
+                              margin-bottom:10px">{icon} {header}</div>
+                  <div style="font-size:.82rem;color:#c4c6d4;line-height:1.7">
+                    {body_html}
+                  </div>
+                </div>""", unsafe_allow_html=True)
+
+        st.markdown(
+            "<div style='font-size:.68rem;color:#5a5d6e;margin-top:2px;font-style:italic'>"
+            "⚠️ AI-generated analysis is for informational purposes only. "
+            "Not financial advice. Verify all data independently before acting."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — COMPARE TICKERS
@@ -427,12 +548,6 @@ with tab4:
         f"</div>",
         unsafe_allow_html=True,
     )
-
-    # ── Persistent state init ──────────────────────────────────────────────
-    if "cmp_datasets" not in st.session_state: st.session_state["cmp_datasets"] = {}
-    if "cmp_period"   not in st.session_state: st.session_state["cmp_period"]   = "1Y"
-    if "cmp_tickers"  not in st.session_state: st.session_state["cmp_tickers"]  = ""
-    if "cmp_ran"      not in st.session_state: st.session_state["cmp_ran"]      = False
 
     # ── Input row ──────────────────────────────────────────────────────────
     ci1, ci2, ci3 = st.columns([3, 1, 1])
@@ -455,7 +570,7 @@ with tab4:
         st.markdown("<br>", unsafe_allow_html=True)
         run_compare = st.button("🔄 Compare", use_container_width=True, key="btn_compare")
 
-    # ── Fetch on button click → store in session_state ─────────────────────
+    # ── Fetch on click → store in session_state ────────────────────────────
     if run_compare:
         extra_tickers = [t.strip().upper() for t in extra_input.split(",") if t.strip()]
         all_tickers   = list(dict.fromkeys([ticker] + extra_tickers))
@@ -472,12 +587,12 @@ with tab4:
             st.session_state["cmp_period"]   = period_sel
             st.session_state["cmp_ran"]      = True
 
-    # ── Render from session_state (persists across reruns) ─────────────────
+    # ── Render from session_state ──────────────────────────────────────────
     if not st.session_state["cmp_ran"]:
         st.info("👆 Enter additional tickers above and click **🔄 Compare** to start.")
     else:
-        cmp_datasets   = st.session_state["cmp_datasets"]
-        cmp_period     = st.session_state["cmp_period"]
+        cmp_datasets  = st.session_state["cmp_datasets"]
+        cmp_period    = st.session_state["cmp_period"]
 
         for t, d in cmp_datasets.items():
             if not d.get("valid"):
@@ -490,7 +605,7 @@ with tab4:
         else:
             CMP_COLORS = ["#00d4aa", "#60a5fa", "#f59e0b", "#a78bfa", "#f87171"]
 
-            # ── Performance Summary Table ──────────────────────────────────
+            # ── Performance Summary ────────────────────────────────────────
             st.markdown("#### 📋 Performance Summary")
             perf_rows = build_performance_comparison(valid_datasets, cmp_period)
 
@@ -508,17 +623,17 @@ with tab4:
                     f'<tr style="background:{bg}">'
                     f'<td style="padding:8px 14px;font-weight:600;color:{color};'
                     f"font-family:'Courier New',monospace;font-size:.82rem\">{row['Ticker']}</td>"
-                    f'<td style="padding:8px 14px;font-size:.78rem;color:#8b8fa8">{row.get("Name", "—")}</td>'
+                    f'<td style="padding:8px 14px;font-size:.78rem;color:#8b8fa8">{row.get("Name","—")}</td>'
                     f'<td style="padding:8px 14px;text-align:right;color:{ret_c};'
                     f"font-family:'Courier New',monospace;font-size:.82rem\">{ret}</td>"
                     f'<td style="padding:8px 14px;text-align:right;color:#e8eaf0;'
-                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Ann. Vol', '—')}</td>"
+                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Ann. Vol','—')}</td>"
                     f'<td style="padding:8px 14px;text-align:right;color:#ef5350;'
-                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Max DD', '—')}</td>"
+                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Max DD','—')}</td>"
                     f'<td style="padding:8px 14px;text-align:right;color:#e8eaf0;'
-                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Sharpe', '—')}</td>"
+                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Sharpe','—')}</td>"
                     f'<td style="padding:8px 14px;text-align:right;color:#e8eaf0;'
-                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Beta', '—')}</td>"
+                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Beta','—')}</td>"
                     f'</tr>'
                 )
             st.markdown(f"""
@@ -562,7 +677,7 @@ with tab4:
                 width="stretch",
             )
 
-            # ── Fundamental Comparison Table ──────────────────────────────
+            # ── Fundamental Table ─────────────────────────────────────────
             st.markdown("#### 📊 Fundamental Metrics Comparison")
             fund_rows     = build_fundamental_comparison(valid_datasets)
             valid_tickers = list(valid_datasets.keys())
@@ -590,7 +705,7 @@ with tab4:
               </table>
             </div>""", unsafe_allow_html=True)
 
-            # ── Clear button ───────────────────────────────────────────────
+            # ── Clear ──────────────────────────────────────────────────────
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("🗑️ Clear Comparison", key="btn_clear_cmp"):
                 st.session_state["cmp_datasets"] = {}
