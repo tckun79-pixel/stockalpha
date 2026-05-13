@@ -89,8 +89,23 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
 
-# ── LANDING ───────────────────────────────────────────────────────────────────
-if not run_btn or not ticker_input:
+# ── SESSION STATE INIT ────────────────────────────────────────────────────────
+for _key, _default in [
+    ("analysis_done",   False),
+    ("analysis_data",   None),
+    ("fund",            None),
+    ("df_tech",         None),
+    ("sr",              None),
+    ("signals",         None),
+    ("perf",            None),
+    ("chart",           None),
+    ("fc",              None),
+]:
+    if _key not in st.session_state:
+        st.session_state[_key] = _default
+
+# ── LANDING (only shown before first analysis) ────────────────────────────────
+if not st.session_state["analysis_done"] and not (run_btn and ticker_input):
     st.markdown("""
     <div style="text-align:center;padding:60px 20px 40px">
       <div style="font-size:2.2rem;font-weight:700;color:#e8eaf0;
@@ -132,74 +147,58 @@ if not run_btn or not ticker_input:
     st.stop()
 
 
-# ── FETCH DATA ────────────────────────────────────────────────────────────────
-with st.spinner(f"⏳ Fetching data for **{ticker_input}**..."):
-    data = fetch_all(ticker_input, market_sel)
+# NEW
+# ── FETCH & CACHE when Run button clicked ─────────────────────────────────────
+if run_btn and ticker_input:
+    with st.spinner(f"⏳ Fetching data for **{ticker_input}**..."):
+        _data = fetch_all(ticker_input, market_sel)
 
-if not data["valid"]:
-    st.error(f"❌ {data['error']}")
-    st.info("💡 US tickers: AAPL | SGX: D05.SI | HKEX: 0700.HK")
-    st.stop()
+    if not _data["valid"]:
+        st.error(f"❌ {_data['error']}")
+        st.info("💡 US tickers: AAPL | SGX: D05.SI | HKEX: 0700.HK")
+        st.stop()
 
+    with st.spinner("⚙️ Running fundamental analysis..."):
+        _fund = compute_quarterly_metrics(
+            _data["income_stmt"], _data["balance_sheet"], _data["cashflow"], _data["info"]
+        )
+    with st.spinner("📈 Computing technical indicators..."):
+        _df_tech = compute_indicators(_data["price_history"])
+        _sr      = find_support_resistance(_df_tech)
+        _signals = get_indicator_signals(_df_tech)
+        _perf    = compute_performance(_df_tech)
+        _chart   = build_chart(_df_tech)
+    with st.spinner("🔮 Generating price forecast..."):
+        _fc = run_forecast(_data["price_history"], _data["info"], _fund)
+
+    st.session_state.update({
+        "analysis_done": True,
+        "analysis_data": _data,
+        "fund":    _fund,
+        "df_tech": _df_tech,
+        "sr":      _sr,
+        "signals": _signals,
+        "perf":    _perf,
+        "chart":   _chart,
+        "fc":      _fc,
+    })
+
+# ── LOAD FROM SESSION STATE (every rerun uses cached results) ─────────────────
+data          = st.session_state["analysis_data"]
 info          = data["info"]
 price_history = data["price_history"]
 market        = data["market"]
 ticker        = data["ticker"]
-currency      = get_currency_symbol(market, info)
-cur_price     = get_current_price(info) or float(price_history["Close"].iloc[-1])
+fund          = st.session_state["fund"]
+df_tech       = st.session_state["df_tech"]
+sr            = st.session_state["sr"]
+signals       = st.session_state["signals"]
+perf          = st.session_state["perf"]
+chart         = st.session_state["chart"]
+fc            = st.session_state["fc"]
 
-badge_cls = {"US": "badge-us", "SGX": "badge-sg", "HKEX": "badge-hk"}.get(market, "badge-us")
-badge_lbl = {"US": "NYSE/NASDAQ", "SGX": "SGX", "HKEX": "HKEX"}.get(market, market)
-company   = info.get("longName") or info.get("shortName") or ticker
-chg       = info.get("regularMarketChange") or 0
-chg_pct   = info.get("regularMarketChangePercent") or 0
-chg_col   = "#26a69a" if chg >= 0 else "#ef5350"
-chg_arrow = "▲" if chg >= 0 else "▼"
-mcap      = info.get("marketCap")
-mcap_str  = (f"{currency}{mcap/1e12:.2f}T" if mcap and mcap >= 1e12 else
-             f"{currency}{mcap/1e9:.2f}B"  if mcap and mcap >= 1e9  else
-             f"{currency}{mcap/1e6:.0f}M"  if mcap else "—")
-
-st.markdown(f"""
-<div style="background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;
-            padding:18px 24px;margin-bottom:20px;display:flex;
-            justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-  <div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="font-size:1.3rem;font-weight:700;color:#e8eaf0">{company}</span>
-      <span style="font-size:.85rem;color:#8b8fa8;font-family:'Courier New',monospace">{ticker}</span>
-      <span class="exchange-badge {badge_cls}">{badge_lbl}</span>
-    </div>
-    <div style="margin-top:4px;font-size:.75rem;color:#5a5d6e">
-      Data via yfinance · {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}
-    </div>
-  </div>
-  <div style="text-align:right">
-    <div style="font-size:1.6rem;font-weight:700;color:#e8eaf0;
-                font-family:'Courier New',monospace">{currency}{cur_price:,.2f}</div>
-    <div style="font-size:.82rem;color:{chg_col}">
-      {chg_arrow} {abs(chg):.2f} ({abs(chg_pct * 100):.2f}%)</div>
-    <div style="font-size:.72rem;color:#5a5d6e">Mkt Cap: {mcap_str}</div>
-  </div>
-</div>""", unsafe_allow_html=True)
-
-
-# ── RUN ANALYSIS ──────────────────────────────────────────────────────────────
-with st.spinner("⚙️ Running fundamental analysis..."):
-    fund = compute_quarterly_metrics(
-        data["income_stmt"], data["balance_sheet"], data["cashflow"], info
-    )
-
-with st.spinner("📈 Computing technical indicators..."):
-    df_tech = compute_indicators(price_history)
-    sr      = find_support_resistance(df_tech)
-    signals = get_indicator_signals(df_tech)
-    perf    = compute_performance(df_tech)
-    chart   = build_chart(df_tech)
-
-with st.spinner("🔮 Generating price forecast..."):
-    fc = run_forecast(price_history, info, fund)
-
+currency  = get_currency_symbol(market, info)
+cur_price = get_current_price(info) or float(price_history["Close"].iloc[-1])
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4 = st.tabs([
