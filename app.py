@@ -64,10 +64,10 @@ with st.sidebar:
         ["Auto-detect", "US (NYSE/NASDAQ)", "SG (SGX)", "HK (HKEX)"],
     )
     mmap = {
-        "Auto-detect":       "Auto",
-        "US (NYSE/NASDAQ)":  "US",
-        "SG (SGX)":          "SG",
-        "HK (HKEX)":         "HK",
+        "Auto-detect":      "Auto",
+        "US (NYSE/NASDAQ)": "US",
+        "SG (SGX)":         "SG",
+        "HK (HKEX)":        "HK",
     }
     market_sel = mmap[market_override]
 
@@ -268,13 +268,13 @@ with tab1:
             rv2 = [(q.get("Revenue") or 0) / 1e9 for q in quarters][::-1]
             f = dark_fig("Revenue (Billions)")
             f.add_trace(go.Bar(x=ql, y=rv2, marker_color="#00d4aa"))
-            st.plotly_chart(f, use_container_width=True)
+            st.plotly_chart(f, width="stretch")
         with col2:
             ev = [q.get("EPS Diluted") or 0 for q in quarters][::-1]
             ec = ["#26a69a" if v >= 0 else "#ef5350" for v in ev]
             f = dark_fig("EPS (Diluted)")
             f.add_trace(go.Bar(x=ql, y=ev, marker_color=ec))
-            st.plotly_chart(f, use_container_width=True)
+            st.plotly_chart(f, width="stretch")
 
         col3, col4 = st.columns(2)
         with col3:
@@ -290,13 +290,13 @@ with tab1:
                     line=dict(color=color, width=2), mode="lines+markers",
                 ))
             f.update_layout(legend=dict(font=dict(size=9), bgcolor="rgba(0,0,0,0)"))
-            st.plotly_chart(f, use_container_width=True)
+            st.plotly_chart(f, width="stretch")
         with col4:
             fv = [(q.get("FCF") or 0) / 1e9 for q in quarters][::-1]
             fc_colors = ["#26a69a" if v >= 0 else "#ef5350" for v in fv]
             f = dark_fig("Free Cash Flow (Billions)")
             f.add_trace(go.Bar(x=ql, y=fv, marker_color=fc_colors))
-            st.plotly_chart(f, use_container_width=True)
+            st.plotly_chart(f, width="stretch")
 
     st.markdown("#### 🚩 Earnings Quality Check")
     render_flag_alerts(fund.get("flags", []))
@@ -320,7 +320,7 @@ with tab1:
 # ══════════════════════════════════════════════════════════════════════════════
 with tab2:
     st.markdown("### 1-Year Price Chart (from 5Y dataset)")
-    st.plotly_chart(chart, use_container_width=True)
+    st.plotly_chart(chart, width="stretch")
 
     st.markdown("#### Indicator Signals")
     sig_cols = st.columns(min(len(signals), 4))
@@ -345,10 +345,8 @@ with tab2:
             bg = "#1e2130" if i % 2 == 0 else "#1a1d27"
             sr_rows_html += (
                 f'<tr style="background:{bg}">'
-                f'<td style="padding:8px 14px;color:#26a69a;'
-                f"font-family:'Courier New',monospace;font-size:.82rem\">🟢 {s}</td>"
-                f'<td style="padding:8px 14px;color:#ef5350;'
-                f"font-family:'Courier New',monospace;font-size:.82rem;text-align:right\">🔴 {r}</td>"
+                f'<td style="padding:8px 14px;color:#26a69a;font-family:\'Courier New\',monospace;font-size:.82rem">🟢 {s}</td>'
+                f'<td style="padding:8px 14px;color:#ef5350;font-family:\'Courier New\',monospace;font-size:.82rem;text-align:right">🔴 {r}</td>'
                 f'</tr>'
             )
         st.markdown(f"""
@@ -390,7 +388,7 @@ with tab3:
         render_forecast_summary(fc["6m"], fc["12m"], fc["confidence"])
 
         if fc.get("chart"):
-            st.plotly_chart(fc["chart"], use_container_width=True)
+            st.plotly_chart(fc["chart"], width="stretch")
 
         fc1, fc2 = st.columns(2)
         with fc1:
@@ -431,158 +429,172 @@ with tab4:
         unsafe_allow_html=True,
     )
 
+    # ── Persistent state init ──────────────────────────────────────────────
+    if "cmp_datasets" not in st.session_state: st.session_state["cmp_datasets"] = {}
+    if "cmp_period"   not in st.session_state: st.session_state["cmp_period"]   = "1Y"
+    if "cmp_tickers"  not in st.session_state: st.session_state["cmp_tickers"]  = ""
+    if "cmp_ran"      not in st.session_state: st.session_state["cmp_ran"]      = False
+
+    # ── Input row ──────────────────────────────────────────────────────────
     ci1, ci2, ci3 = st.columns([3, 1, 1])
     with ci1:
         extra_input = st.text_input(
             "Add tickers to compare (comma-separated)",
+            value=st.session_state["cmp_tickers"],
             placeholder="e.g. MSFT, GOOGL, META  or  D05.SI, O39.SI",
-            key="compare_input",
+            key="cmp_input_box",
         )
     with ci2:
-        cmp_period = st.selectbox(
+        period_sel = st.selectbox(
             "Period", ["1M", "3M", "6M", "1Y", "2Y", "5Y"],
-            index=3, key="cmp_period",
+            index=["1M", "3M", "6M", "1Y", "2Y", "5Y"].index(
+                st.session_state["cmp_period"]
+            ),
+            key="cmp_period_box",
         )
     with ci3:
-        run_compare = st.button("🔄 Compare", use_container_width=True, key="run_compare")
+        st.markdown("<br>", unsafe_allow_html=True)
+        run_compare = st.button("🔄 Compare", use_container_width=True, key="btn_compare")
 
-    if not run_compare and "cmp_data" not in st.session_state:
-        st.info("👆 Enter additional tickers above and click **Compare** to start.")
-    else:
+    # ── Fetch on button click → store in session_state ─────────────────────
+    if run_compare:
         extra_tickers = [t.strip().upper() for t in extra_input.split(",") if t.strip()]
         all_tickers   = list(dict.fromkeys([ticker] + extra_tickers))
-
+        if len(all_tickers) > 5:
+            st.warning("Maximum 5 tickers. Using first 5.")
+            all_tickers = all_tickers[:5]
         if len(all_tickers) < 2:
-            st.warning("Please enter at least one additional ticker to compare.")
+            st.warning("Enter at least one additional ticker.")
         else:
-            if len(all_tickers) > 5:
-                st.warning("Maximum 5 tickers supported. Using first 5.")
-                all_tickers = all_tickers[:5]
+            with st.spinner(f"Fetching: {', '.join(all_tickers)}..."):
+                datasets = fetch_comparison_data(all_tickers)
+            st.session_state["cmp_datasets"] = datasets
+            st.session_state["cmp_tickers"]  = extra_input
+            st.session_state["cmp_period"]   = period_sel
+            st.session_state["cmp_ran"]      = True
 
-            with st.spinner(f"Fetching data for: {', '.join(all_tickers)}..."):
-                cmp_datasets = fetch_comparison_data(all_tickers)
-                st.session_state["cmp_data"] = cmp_datasets
+    # ── Render from session_state (persists across reruns) ─────────────────
+    if not st.session_state["cmp_ran"]:
+        st.info("👆 Enter additional tickers above and click **🔄 Compare** to start.")
+    else:
+        cmp_datasets   = st.session_state["cmp_datasets"]
+        cmp_period     = st.session_state["cmp_period"]
 
-            for t, d in cmp_datasets.items():
-                if not d.get("valid"):
-                    st.error(f"❌ {t}: {d.get('error', 'Failed to fetch')}")
+        for t, d in cmp_datasets.items():
+            if not d.get("valid"):
+                st.error(f"❌ {t}: {d.get('error', 'Failed to fetch')}")
 
-            valid_datasets = {t: d for t, d in cmp_datasets.items() if d.get("valid")}
+        valid_datasets = {t: d for t, d in cmp_datasets.items() if d.get("valid")}
 
-            if len(valid_datasets) < 2:
-                st.error("Need at least 2 valid tickers to compare.")
-            else:
-                CMP_COLORS = ["#00d4aa", "#60a5fa", "#f59e0b", "#a78bfa", "#f87171"]
+        if len(valid_datasets) < 2:
+            st.error("Need at least 2 valid tickers to compare.")
+        else:
+            CMP_COLORS = ["#00d4aa", "#60a5fa", "#f59e0b", "#a78bfa", "#f87171"]
 
-                # ── Performance Summary ────────────────────────────────────
-                st.markdown("#### 📋 Performance Summary")
-                perf_rows = build_performance_comparison(valid_datasets, cmp_period)
+            # ── Performance Summary Table ──────────────────────────────────
+            st.markdown("#### 📋 Performance Summary")
+            perf_rows = build_performance_comparison(valid_datasets, cmp_period)
 
-                hdr = "".join(
-                    f'<th style="padding:8px 14px;text-align:right;color:#8b8fa8;font-size:.75rem">{h}</th>'
-                    for h in ["Ticker", "Name", "Return", "Ann. Vol", "Max DD", "Sharpe", "Beta"]
+            hdr = "".join(
+                f'<th style="padding:8px 14px;text-align:right;color:#8b8fa8;font-size:.75rem">{h}</th>'
+                for h in ["Ticker", "Name", "Return", "Ann. Vol", "Max DD", "Sharpe", "Beta"]
+            )
+            p_rows_html = ""
+            for idx, row in enumerate(perf_rows):
+                bg    = "#1e2130" if idx % 2 == 0 else "#1a1d27"
+                color = CMP_COLORS[idx % len(CMP_COLORS)]
+                ret   = row.get("Return", "—")
+                ret_c = "#26a69a" if "+" in str(ret) else "#ef5350" if "-" in str(ret) else "#e8eaf0"
+                p_rows_html += (
+                    f'<tr style="background:{bg}">'
+                    f'<td style="padding:8px 14px;font-weight:600;color:{color};'
+                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row['Ticker']}</td>"
+                    f'<td style="padding:8px 14px;font-size:.78rem;color:#8b8fa8">{row.get("Name", "—")}</td>'
+                    f'<td style="padding:8px 14px;text-align:right;color:{ret_c};'
+                    f"font-family:'Courier New',monospace;font-size:.82rem\">{ret}</td>"
+                    f'<td style="padding:8px 14px;text-align:right;color:#e8eaf0;'
+                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Ann. Vol', '—')}</td>"
+                    f'<td style="padding:8px 14px;text-align:right;color:#ef5350;'
+                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Max DD', '—')}</td>"
+                    f'<td style="padding:8px 14px;text-align:right;color:#e8eaf0;'
+                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Sharpe', '—')}</td>"
+                    f'<td style="padding:8px 14px;text-align:right;color:#e8eaf0;'
+                    f"font-family:'Courier New',monospace;font-size:.82rem\">{row.get('Beta', '—')}</td>"
+                    f'</tr>'
                 )
-                p_rows_html = ""
-                for idx, row in enumerate(perf_rows):
-                    bg    = "#1e2130" if idx % 2 == 0 else "#1a1d27"
-                    color = CMP_COLORS[idx % len(CMP_COLORS)]
-                    ret   = row.get("Return", "—")
-                    ret_c = ("#26a69a" if "+" in str(ret)
-                             else "#ef5350" if "-" in str(ret) else "#e8eaf0")
-                    p_rows_html += (
-                        f'<tr style="background:{bg}">'
-                        f'<td style="padding:8px 14px;font-size:.82rem;font-weight:600;color:{color};'
-                        f"font-family:'Courier New',monospace\">{row['Ticker']}</td>"
-                        f'<td style="padding:8px 14px;font-size:.78rem;color:#8b8fa8">'
-                        f"{row.get('Name','—')}</td>"
-                        f'<td style="padding:8px 14px;text-align:right;font-size:.82rem;'
-                        f"color:{ret_c};font-family:'Courier New',monospace\">{ret}</td>"
-                        f'<td style="padding:8px 14px;text-align:right;font-size:.82rem;'
-                        f"color:#e8eaf0;font-family:'Courier New',monospace\">"
-                        f"{row.get('Ann. Vol','—')}</td>"
-                        f'<td style="padding:8px 14px;text-align:right;font-size:.82rem;'
-                        f"color:#ef5350;font-family:'Courier New',monospace\">"
-                        f"{row.get('Max DD','—')}</td>"
-                        f'<td style="padding:8px 14px;text-align:right;font-size:.82rem;'
-                        f"color:#e8eaf0;font-family:'Courier New',monospace\">"
-                        f"{row.get('Sharpe','—')}</td>"
-                        f'<td style="padding:8px 14px;text-align:right;font-size:.82rem;'
-                        f"color:#e8eaf0;font-family:'Courier New',monospace\">"
-                        f"{row.get('Beta','—')}</td>"
-                        f'</tr>'
-                    )
+            st.markdown(f"""
+            <div style="overflow-x:auto;border-radius:8px;border:1px solid #2a2d3a;margin-bottom:20px">
+              <table style="width:100%;border-collapse:collapse">
+                <thead><tr style="border-bottom:1px solid #2a2d3a">{hdr}</tr></thead>
+                <tbody>{p_rows_html}</tbody>
+              </table>
+            </div>""", unsafe_allow_html=True)
 
-                st.markdown(f"""
-                <div style="overflow-x:auto;border-radius:8px;border:1px solid #2a2d3a;
-                            margin-bottom:20px">
-                  <table style="width:100%;border-collapse:collapse">
-                    <thead><tr style="border-bottom:1px solid #2a2d3a">{hdr}</tr></thead>
-                    <tbody>{p_rows_html}</tbody>
-                  </table>
-                </div>""", unsafe_allow_html=True)
+            # ── Normalized Price Chart ─────────────────────────────────────
+            st.plotly_chart(
+                build_normalized_price_chart(valid_datasets, cmp_period),
+                width="stretch",
+            )
 
-                # ── Normalized Price Chart ─────────────────────────────────
-                st.plotly_chart(
-                    build_normalized_price_chart(valid_datasets, cmp_period),
-                    use_container_width=True,
-                )
+            # ── Radar + Correlation ────────────────────────────────────────
+            r1, r2 = st.columns(2)
+            with r1:
+                st.plotly_chart(build_radar_chart(valid_datasets), width="stretch")
+            with r2:
+                corr_fig = build_correlation_matrix(valid_datasets, cmp_period)
+                if corr_fig:
+                    st.plotly_chart(corr_fig, width="stretch")
 
-                # ── Radar + Correlation ────────────────────────────────────
-                radar_col, corr_col = st.columns(2)
-                with radar_col:
-                    st.plotly_chart(
-                        build_radar_chart(valid_datasets),
-                        use_container_width=True,
-                    )
-                with corr_col:
-                    corr_fig = build_correlation_matrix(valid_datasets, cmp_period)
-                    if corr_fig:
-                        st.plotly_chart(corr_fig, use_container_width=True)
+            # ── RSI ────────────────────────────────────────────────────────
+            st.plotly_chart(
+                build_rsi_comparison_chart(valid_datasets, cmp_period),
+                width="stretch",
+            )
 
-                # ── RSI Comparison ─────────────────────────────────────────
-                st.plotly_chart(
-                    build_rsi_comparison_chart(valid_datasets, cmp_period),
-                    use_container_width=True,
-                )
+            # ── Drawdown ──────────────────────────────────────────────────
+            st.plotly_chart(
+                build_drawdown_chart(valid_datasets, cmp_period),
+                width="stretch",
+            )
 
-                # ── Drawdown ───────────────────────────────────────────────
-                st.plotly_chart(
-                    build_drawdown_chart(valid_datasets, cmp_period),
-                    use_container_width=True,
-                )
+            # ── Volume ────────────────────────────────────────────────────
+            st.plotly_chart(
+                build_volume_chart(valid_datasets, cmp_period),
+                width="stretch",
+            )
 
-                # ── Volume ────────────────────────────────────────────────
-                st.plotly_chart(
-                    build_volume_chart(valid_datasets, cmp_period),
-                    use_container_width=True,
-                )
+            # ── Fundamental Comparison Table ──────────────────────────────
+            st.markdown("#### 📊 Fundamental Metrics Comparison")
+            fund_rows     = build_fundamental_comparison(valid_datasets)
+            valid_tickers = list(valid_datasets.keys())
 
-                # ── Fundamental Comparison Table ──────────────────────────
-                st.markdown("#### 📊 Fundamental Metrics Comparison")
-                fund_rows    = build_fundamental_comparison(valid_datasets)
-                valid_tickers = list(valid_datasets.keys())
+            fh = '<th style="padding:8px 14px;text-align:left;color:#8b8fa8;font-size:.75rem">Metric</th>'
+            for t in valid_tickers:
+                fh += (f'<th style="padding:8px 14px;text-align:right;'
+                       f'color:#8b8fa8;font-size:.75rem">{t}</th>')
 
-                fh = '<th style="padding:8px 14px;text-align:left;color:#8b8fa8;font-size:.75rem">Metric</th>'
+            fund_rows_html = ""
+            for idx, row in enumerate(fund_rows):
+                bg    = "#1e2130" if idx % 2 == 0 else "#1a1d27"
+                cells = f'<td style="padding:8px 14px;color:#8b8fa8;font-size:.78rem">{row["Metric"]}</td>'
                 for t in valid_tickers:
-                    fh += (f'<th style="padding:8px 14px;text-align:right;'
-                           f'color:#8b8fa8;font-size:.75rem">{t}</th>')
+                    v = row.get(t, "—")
+                    cells += (f'<td style="padding:8px 14px;text-align:right;color:#e8eaf0;'
+                              f"font-size:.82rem;font-family:'Courier New',monospace\">{v}</td>")
+                fund_rows_html += f'<tr style="background:{bg}">{cells}</tr>'
 
-                fund_rows_html = ""
-                for idx, row in enumerate(fund_rows):
-                    bg    = "#1e2130" if idx % 2 == 0 else "#1a1d27"
-                    cells = (f'<td style="padding:8px 14px;color:#8b8fa8;'
-                             f'font-size:.78rem">{row["Metric"]}</td>')
-                    for t in valid_tickers:
-                        v = row.get(t, "—")
-                        cells += (f'<td style="padding:8px 14px;text-align:right;'
-                                  f"color:#e8eaf0;font-size:.82rem;"
-                                  f"font-family:'Courier New',monospace\">{v}</td>")
-                    fund_rows_html += f'<tr style="background:{bg}">{cells}</tr>'
+            st.markdown(f"""
+            <div style="overflow-x:auto;border-radius:8px;border:1px solid #2a2d3a">
+              <table style="width:100%;border-collapse:collapse">
+                <thead><tr style="border-bottom:1px solid #2a2d3a">{fh}</tr></thead>
+                <tbody>{fund_rows_html}</tbody>
+              </table>
+            </div>""", unsafe_allow_html=True)
 
-                st.markdown(f"""
-                <div style="overflow-x:auto;border-radius:8px;border:1px solid #2a2d3a">
-                  <table style="width:100%;border-collapse:collapse">
-                    <thead><tr style="border-bottom:1px solid #2a2d3a">{fh}</tr></thead>
-                    <tbody>{fund_rows_html}</tbody>
-                  </table>
-                </div>""", unsafe_allow_html=True)
+            # ── Clear button ───────────────────────────────────────────────
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🗑️ Clear Comparison", key="btn_clear_cmp"):
+                st.session_state["cmp_datasets"] = {}
+                st.session_state["cmp_ran"]      = False
+                st.session_state["cmp_tickers"]  = ""
+                st.rerun()
