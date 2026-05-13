@@ -82,7 +82,8 @@ def find_support_resistance(df: pd.DataFrame, n: int = 3) -> dict:
 
 
 def build_chart(df: pd.DataFrame) -> go.Figure:
-    dp = df.last("1Y").copy() if len(df) > 252 else df.copy()
+    one_year_ago = df.index[-1] - pd.DateOffset(years=1)
+    dp = df[df.index >= one_year_ago].copy() if len(df) > 252 else df.copy()
 
     fig = make_subplots(
         rows=4, cols=1, shared_xaxes=True,

@@ -97,7 +97,8 @@ def run_forecast(price_history: pd.DataFrame, info: dict, fundamental_data: dict
     bears  = [cur, result["6m"]["bear"],  result["12m"]["bear"]]
 
     fig = go.Figure()
-    hist6 = close.last("6M")
+    six_months_ago = close.index[-1] - pd.DateOffset(months=6)
+    hist6 = close[close.index >= six_months_ago]
     fig.add_trace(go.Scatter(x=hist6.index, y=hist6.values,
                               name="Historical", line=dict(color="#94a3b8", width=2)))
     fig.add_trace(go.Scatter(x=dates + dates[::-1], y=bulls + bears[::-1],
