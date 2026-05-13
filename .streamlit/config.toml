@@ -1,0 +1,11 @@
+[server]
+headless = true
+port = 8506
+address = "127.0.0.1"
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+serverAddress = "stockalpha.stockwheel.cc"
+serverPort = 443
+gatherUsageStats = false
