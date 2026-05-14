@@ -33,9 +33,9 @@ def render_earnings_table(quarters: list):
             c = "#26a69a" if val > 0 else "#ef5350"
             return f'<span style="color:{c}">{val:+.1f}%</span>'
         if money:
-            if abs(val) >= 1e9: return f"B"
-            if abs(val) >= 1e6: return f"M"
-            return f""
+            if abs(val) >= 1e9: return f"{val/1e9:.1f}B"
+            if abs(val) >= 1e6: return f"{val/1e6:.1f}M"
+            return f"{val:.2f}"
         return f"{val:.2f}"
 
     headers = ["Metric"] + [q["Quarter"] for q in quarters]

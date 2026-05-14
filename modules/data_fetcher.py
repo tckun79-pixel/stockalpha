@@ -21,9 +21,14 @@ def detect_market(ticker: str) -> str:
 
 def normalize_ticker(ticker: str, market_override: str = "Auto") -> str:
     ticker = ticker.upper().strip()
+    if market_override == "Auto":
+        market = detect_market(ticker)
+        if market == "US" and not ticker.endswith(".SI") and not ticker.endswith(".HK"):
+            return ticker
+        return ticker
     if market_override == "SG" and not ticker.endswith(".SI"):
         return ticker + ".SI"
-    elif market_override == "HK" and not ticker.endswith(".HK"):
+    if market_override == "HK" and not ticker.endswith(".HK"):
         return ticker + ".HK"
     return ticker
 

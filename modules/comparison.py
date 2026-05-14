@@ -210,7 +210,7 @@ def build_fundamental_comparison(datasets: dict) -> dict:
             elif is_mcap:
                 row[ticker] = f"${val/1e12:.2f}T" if val >= 1e12 else f"${val/1e9:.2f}B" if val >= 1e9 else f"${val/1e6:.0f}M"
             elif is_pct:
-                row[ticker] = f"{val*100:.1f}%" if val else "—"
+                row[ticker] = f"{val*100:.1f}%" if val is not None else "—"
             else:
                 row[ticker] = f"{val:.2f}" if isinstance(val, float) else str(val)
         rows.append(row)

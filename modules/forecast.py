@@ -19,7 +19,8 @@ def _linear_forecast(series: pd.Series, days: int) -> float:
     s = series.dropna().tail(252)
     x = np.arange(len(s)).reshape(-1, 1)
     m = LinearRegression().fit(x, s.values)
-    return float(m.predict([[len(s) + days]])[0])
+    capped_days = min(days, 126)
+    return float(m.predict([[len(s) + capped_days]])[0])
 
 
 def _bollinger_forecast(series: pd.Series) -> dict:
@@ -78,8 +79,11 @@ def run_forecast(price_history: pd.DataFrame, info: dict, fundamental_data: dict
     result["6m"]  = ensemble(lr6,  bb["base"], pe.get("6m",  {}).get("base"), v6)
     result["12m"] = ensemble(lr12, bb["base"], pe.get("12m", {}).get("base"), v12)
 
+    bb_width_pct = (bb["bull"] - bb["bear"]) / bb["base"] if bb["base"] != 0 else 0
     spread = (max(lr6, bb["base"]) - min(lr6, bb["base"])) / cur * 100
-    result["confidence"] = "High" if spread < 10 else "Medium" if spread < 25 else "Low"
+    vol_penalty = bb_width_pct * 50  # scale BB width into percentage points
+    adjusted_spread = spread + vol_penalty
+    result["confidence"] = "High" if adjusted_spread < 10 else "Medium" if adjusted_spread < 25 else "Low"
 
     result["assumptions"] = {
         "Current Price":      f"{cur:.2f}",
