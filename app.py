@@ -80,27 +80,22 @@ with st.sidebar:
     }
     market_sel = mmap[market_override]
 
-    # ── Recent Searches row ──────────────────────────────────────────────
+    # ── Recent Searches ──────────────────────────────────────────────────
     history = history_pop()
     if history:
-        hcols = st.columns([0.9, 0.1], gap="small")
-        with hcols[0]:
-            st.markdown(
-                "<div style='font-size:.72rem;color:#8b8fa8;margin-bottom:4px'>Recent</div>",
-                unsafe_allow_html=True,
-            )
-            btn_cols = st.columns(len(history))
-            for i, h_ticker in enumerate(history):
-                with btn_cols[i]:
-                    if st.button(h_ticker, key=f"hist_{i}", use_container_width=True):
-                        st.session_state["hist_ticker"] = h_ticker
-                        st.rerun()
-        with hcols[1]:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("✕", key="clear_history", help="Clear history"):
-                history_clear()
-                st.session_state.pop("hist_ticker", None)
+        st.markdown(
+            "<div style='font-size:.72rem;color:#8b8fa8;margin-bottom:4px'>Recent</div>",
+            unsafe_allow_html=True,
+        )
+        for i, h_ticker in enumerate(history):
+            if st.button(h_ticker, key=f"hist_{i}", use_container_width=True):
+                st.session_state["hist_ticker"] = h_ticker
                 st.rerun()
+
+        if st.button("✕", key="clear_history", help="Clear history"):
+            history_clear()
+            st.session_state.pop("hist_ticker", None)
+            st.rerun()
 
     # If a history button was clicked, override ticker and auto-trigger
     hist_ticker = st.session_state.pop("hist_ticker", None)
