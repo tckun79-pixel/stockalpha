@@ -191,7 +191,7 @@ if run_btn and ticker_input:
     with st.spinner("🔮 Generating price forecast..."):
         _fc = run_forecast(_data["price_history"], _data["info"], _fund)
 
-    with st.spinner("🤖 Generating AI summary (DeepSeek V3.2)..."):
+    with st.spinner("🤖 Generating AI summary (DeepSeek V4 Flash)..."):
         _ai = get_ai_summary(
             _data["ticker"],
             _data["info"],
