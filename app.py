@@ -107,6 +107,10 @@ with st.sidebar:
     else:
         run_btn = st.button("🔍 Run Deep Analysis", use_container_width=True, type="primary")
 
+    # ── Wheel Scanner ────────────────────────────────────────────────────
+    with st.sidebar.expander("🔧 Wheel Scanner", expanded=False):
+        render_wheel_scanner()
+
     st.markdown("---")
     st.markdown("""
     <div style="font-size:.75rem;color:#8b8fa8;line-height:1.6">
@@ -1007,6 +1011,3 @@ with tab5:
                 st.rerun()
 
 
-# ── Sidebar: Wheel Scanner (always accessible) ─────────────────────────────
-with st.sidebar.expander("🔧 Wheel Scanner", expanded=False):
-    render_wheel_scanner()
