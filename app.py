@@ -43,6 +43,7 @@ from modules.ticker_analysis import (
 )
 from modules.search_history import push as history_push, pop as history_pop, clear as history_clear
 from modules.news_sentiment import fetch_and_score_news
+from modules.wheel_scanner import render_wheel_scanner
 
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
@@ -326,12 +327,13 @@ st.markdown(f"""
 
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Fundamental",
     "📈 Technical",
     "💰 Earnings & IV",
     "🔮 Forecast (6–12M)",
     "⚖️ Compare Tickers",
+    "🔧 Wheel Scanner",
 ])
 
 
@@ -1004,3 +1006,10 @@ with tab5:
                 st.session_state["cmp_ran"]      = False
                 st.session_state["cmp_tickers"]  = ""
                 st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — WHEEL SCANNER
+# ══════════════════════════════════════════════════════════════════════════════
+with tab6:
+    render_wheel_scanner()
