@@ -236,8 +236,10 @@ def compute_avg_post_earnings_move(price_history: pd.DataFrame, earnings_dates: 
             except Exception:
                 continue
 
-        if dt.tz is not None:
-            dt = dt.tz_localize(None)
+        if dt.tzinfo is None:
+            dt = pd.Timestamp(dt).tz_localize("America/New_York")
+        else:
+            dt = pd.Timestamp(dt).tz_convert("America/New_York")
 
         # Find the next trading day close after earnings
         mask = closes.index > dt
