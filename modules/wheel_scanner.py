@@ -215,10 +215,11 @@ _COL_ORDER = [
 ]
 
 
-def render_wheel_scanner():
+def render_wheel_scanner(container=None):
     """Main entry point — renders the Wheel Scanner in the sidebar expander."""
-    st.markdown("### Wheel Strategy Scanner")
-    st.markdown(
+    ctx = container if container is not None else st.sidebar
+    ctx.markdown("### Wheel Strategy Scanner")
+    ctx.markdown(
         "<div style='font-size:.82rem;color:#8b8fa8;margin-bottom:12px'>"
         "Scan tickers for Cash-Secured Put (CSP) and Covered Call (CC) opportunities. "
         "Mark a ticker as <b>Owned</b> to see CC data.</div>",
@@ -226,7 +227,7 @@ def render_wheel_scanner():
     )
 
     # ── Input area with unique 'ws_' key ────────────────────────────────────
-    ticker_text = st.text_area(
+    ticker_text = ctx.text_area(
         "Tickers (comma-separated)",
         value=DEFAULT_TICKERS,
         height=80,
@@ -234,11 +235,11 @@ def render_wheel_scanner():
     )
     tickers = [t.strip().upper() for t in ticker_text.split(",") if t.strip()]
 
-    col1, col2 = st.columns([1, 5])
+    col1, col2 = ctx.columns([1, 5])
     with col1:
-        refresh = st.button("🔄 Refresh", use_container_width=True, key="ws_refresh")
+        refresh = ctx.button("🔄 Refresh", use_container_width=True, key="ws_refresh")
     with col2:
-        st.markdown(
+        ctx.markdown(
             f"<div style='font-size:.78rem;color:#5a5d6e;padding-top:6px'>{len(tickers)} ticker(s)</div>",
             unsafe_allow_html=True,
         )
@@ -250,18 +251,18 @@ def render_wheel_scanner():
         if t not in st.session_state["ws_owned"]:
             st.session_state["ws_owned"][t] = False
 
-    st.markdown("#### Owned Tickers")
-    owned_cols = st.columns(min(len(tickers), 8))
+    ctx.markdown("#### Owned Tickers")
+    owned_cols = ctx.columns(min(len(tickers), 8))
     for i, t in enumerate(tickers):
         with owned_cols[i % len(owned_cols)]:
-            st.session_state["ws_owned"][t] = st.checkbox(
+            st.session_state["ws_owned"][t] = ctx.checkbox(
                 t, value=st.session_state["ws_owned"].get(t, False),
                 key=f"ws_owned_{t}",
             )
     owned_set = {t for t in tickers if st.session_state["ws_owned"].get(t)}
 
     if not tickers:
-        st.info("Enter at least one ticker.")
+        ctx.info("Enter at least one ticker.")
         return
 
     # ── Refresh-clicked flag pattern ────────────────────────────────────────
@@ -290,7 +291,7 @@ def render_wheel_scanner():
     df = build_results_df(results, owned_set)
 
     if df.empty:
-        st.warning("No results to display.")
+        ctx.warning("No results to display.")
         return
 
     # ── Fill None/NaN in numeric columns before styling ────────────────────
@@ -320,8 +321,8 @@ def render_wheel_scanner():
 
     styled_df = df.style.apply(_highlight_row, axis=1)
 
-    st.markdown("#### Options Chain Scanner Results")
-    st.dataframe(
+    ctx.markdown("#### Options Chain Scanner Results")
+    ctx.dataframe(
         styled_df,
         column_config={
             "Ticker": st.column_config.TextColumn("Ticker", width="small"),
@@ -349,7 +350,7 @@ def render_wheel_scanner():
     )
 
     # ── Legenda ──────────────────────────────────────────────────────────────
-    st.markdown(
+    ctx.markdown(
         "<div style='font-size:.75rem;color:#5a5d6e;margin-top:8px;line-height:1.8'>"
         "🟢 <b>IV/HV &gt; 1.3</b> — elevated IV, good for selling premium &nbsp;&nbsp;|&nbsp;&nbsp;"
         "🔴 <b>DTE &lt; 7</b> — too close to expiry<br>"
@@ -360,36 +361,36 @@ def render_wheel_scanner():
     )
 
     # ── Per-ticker detail expanders ──────────────────────────────────────────
-    st.markdown("#### Per-Ticker Details")
+    ctx.markdown("#### Per-Ticker Details")
     for r in results:
         t = r["ticker"]
         if r["error"]:
-            with st.expander(f"❌ {t} — {r['error']}"):
-                st.warning(f"Cannot analyze {t}: {r['error']}")
+            with ctx.expander(f"❌ {t} — {r['error']}"):
+                ctx.warning(f"Cannot analyze {t}: {r['error']}")
             continue
 
         csp = r["csp"]
         cc = r["cc"] if t in owned_set else None
-        with st.expander(f"📊 {t} @ ${_fmt(r['price'])} — Exp: {r['expiry']} ({r['dte']}d)"):
-            c1, c2 = st.columns(2)
+        with ctx.expander(f"📊 {t} @ ${_fmt(r['price'])} — Exp: {r['expiry']} ({r['dte']}d)"):
+            c1, c2 = ctx.columns(2)
             with c1:
-                st.markdown("**Cash-Secured Put (10% OTM)**")
-                st.metric("Strike", f"${_fmt(csp['strike'], decimals=2)}")
-                st.metric("Bid Premium", f"${_fmt(csp['bid'], decimals=2)}")
-                st.metric("Yield", _fmt(csp['premium_yield'], suffix='%'))
-                st.metric("Annualized Yield", _fmt(csp['annualized'], suffix='%'))
-                st.metric("IV", _fmt(csp['iv'], decimals=1, suffix='%'))
-                st.metric("Delta", _fmt(csp['delta'], decimals=2))
+                ctx.markdown("**Cash-Secured Put (10% OTM)**")
+                ctx.metric("Strike", f"${_fmt(csp['strike'], decimals=2)}")
+                ctx.metric("Bid Premium", f"${_fmt(csp['bid'], decimals=2)}")
+                ctx.metric("Yield", _fmt(csp['premium_yield'], suffix='%'))
+                ctx.metric("Annualized Yield", _fmt(csp['annualized'], suffix='%'))
+                ctx.metric("IV", _fmt(csp['iv'], decimals=1, suffix='%'))
+                ctx.metric("Delta", _fmt(csp['delta'], decimals=2))
             with c2:
                 if cc:
-                    st.markdown("**Covered Call (5% OTM)**")
-                    st.metric("Strike", f"${_fmt(cc['strike'], decimals=2)}")
-                    st.metric("Bid Premium", f"${_fmt(cc['bid'], decimals=2)}")
-                    st.metric("Yield", _fmt(cc['premium_yield'], suffix='%'))
-                    st.metric("Annualized Yield", _fmt(cc['annualized'], suffix='%'))
-                    st.metric("IV", _fmt(cc['iv'], decimals=1, suffix='%'))
-                    st.metric("Delta", _fmt(cc['delta'], decimals=2))
+                    ctx.markdown("**Covered Call (5% OTM)**")
+                    ctx.metric("Strike", f"${_fmt(cc['strike'], decimals=2)}")
+                    ctx.metric("Bid Premium", f"${_fmt(cc['bid'], decimals=2)}")
+                    ctx.metric("Yield", _fmt(cc['premium_yield'], suffix='%'))
+                    ctx.metric("Annualized Yield", _fmt(cc['annualized'], suffix='%'))
+                    ctx.metric("IV", _fmt(cc['iv'], decimals=1, suffix='%'))
+                    ctx.metric("Delta", _fmt(cc['delta'], decimals=2))
                 else:
-                    st.markdown("**Covered Call**")
-                    st.info("Mark ticker as 'Owned' above to see CC data.")
-            st.caption(f"HV30: {_fmt(r.get('hv30'), suffix='%')} | IV/HV: {_fmt(round(csp['iv']/r['hv30'],2) if r.get('hv30') else None, decimals=2)}")
+                    ctx.markdown("**Covered Call**")
+                    ctx.info("Mark ticker as 'Owned' above to see CC data.")
+            ctx.caption(f"HV30: {_fmt(r.get('hv30'), suffix='%')} | IV/HV: {_fmt(round(csp['iv']/r['hv30'],2) if r.get('hv30') else None, decimals=2)}")

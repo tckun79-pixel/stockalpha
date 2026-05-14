@@ -109,7 +109,7 @@ with st.sidebar:
 
     # ── Wheel Scanner ────────────────────────────────────────────────────
     with st.sidebar.expander("🔧 Wheel Scanner", expanded=False):
-        render_wheel_scanner()
+        render_wheel_scanner(container=st.sidebar)
 
     st.markdown("---")
     st.markdown("""
