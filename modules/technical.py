@@ -59,25 +59,42 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def find_support_resistance(df: pd.DataFrame, n: int = 3) -> dict:
-    close  = df["Close"].dropna()
+    high  = df["High"].dropna()
+    low   = df["Low"].dropna()
+    close = df["Close"].dropna()
     window = 20
-    mins, maxs = [], []
+    local_highs, local_lows = [], []
 
     for i in range(window, len(close) - window):
-        sl = close.iloc[i - window: i + window + 1]
-        if close.iloc[i] == sl.min(): mins.append(close.iloc[i])
-        if close.iloc[i] == sl.max(): maxs.append(close.iloc[i])
+        hi_sl = high.iloc[i - window: i + window + 1]
+        lo_sl = low.iloc[i - window: i + window + 1]
+        if high.iloc[i] == hi_sl.max():
+            local_highs.append(high.iloc[i])
+        if low.iloc[i] == lo_sl.min():
+            local_lows.append(low.iloc[i])
 
-    def cluster(levels, tol=0.02):
-        out = []
-        for lv in sorted(levels):
-            if not out or abs(lv - out[-1]) / out[-1] > tol:
-                out.append(lv)
-        return out[:n]
+    current_price = close.iloc[-1]
+
+    def merge_levels(levels, tol=0.005):
+        """Merge levels within tol (0.5%) of each other, keeping the mean."""
+        sorted_lv = sorted(levels)
+        merged = []
+        for lv in sorted_lv:
+            if not merged or (lv - merged[-1]) / merged[-1] > tol:
+                merged.append(lv)
+            else:
+                merged[-1] = (merged[-1] + lv) / 2
+        return merged
+
+    supports_raw = merge_levels([lv for lv in local_lows if lv < current_price])
+    resistances_raw = merge_levels([lv for lv in local_highs if lv > current_price])
+
+    def by_proximity(levels, current):
+        return sorted(levels, key=lambda x: abs(x - current))[:n]
 
     return {
-        "support":    cluster(sorted(mins)),
-        "resistance": cluster(sorted(maxs, reverse=True)),
+        "support":    by_proximity(supports_raw, current_price),
+        "resistance": by_proximity(resistances_raw, current_price),
     }
 
 
