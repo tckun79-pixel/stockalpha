@@ -327,13 +327,12 @@ st.markdown(f"""
 
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Fundamental",
     "📈 Technical",
     "💰 Earnings & IV",
     "🔮 Forecast (6–12M)",
     "⚖️ Compare Tickers",
-    "🔧 Wheel Scanner",
 ])
 
 
@@ -1008,8 +1007,6 @@ with tab5:
                 st.rerun()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 6 — WHEEL SCANNER
-# ══════════════════════════════════════════════════════════════════════════════
-with tab6:
+# ── Sidebar: Wheel Scanner (always accessible) ─────────────────────────────
+with st.sidebar.expander("🔧 Wheel Scanner", expanded=False):
     render_wheel_scanner()

@@ -14,6 +14,13 @@ import yfinance as yf
 
 # ── HELPERS ─────────────────────────────────────────────────────────────────────
 
+def _fmt(val, decimals=2, suffix=''):
+    """Format a numeric value, returning '—' for None/NaN."""
+    if val is None or (isinstance(val, float) and np.isnan(val)):
+        return '—'
+    return f'{val:.{decimals}f}{suffix}'
+
+
 def _nearest_strike(target, strikes):
     """Return the strike closest to target."""
     return min(strikes, key=lambda s: abs(s - target))
@@ -289,6 +296,10 @@ def render_wheel_scanner():
         st.warning("No results to display.")
         return
 
+    # ── Fill None/NaN in numeric columns before styling ────────────────────
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    df[numeric_cols] = df[numeric_cols].where(pd.notna, None)
+
     # ── Apply styling ────────────────────────────────────────────────────────
     def _highlight_row(row):
         styles = [""] * len(row)
@@ -362,26 +373,26 @@ def render_wheel_scanner():
 
         csp = r["csp"]
         cc = r["cc"] if t in owned_set else None
-        with st.expander(f"📊 {t} @ ${r['price']:.2f} — Exp: {r['expiry']} ({r['dte']}d)"):
+        with st.expander(f"📊 {t} @ ${_fmt(r['price'])} — Exp: {r['expiry']} ({r['dte']}d)"):
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("**Cash-Secured Put (10% OTM)**")
-                st.metric("Strike", f"${csp['strike']:.2f}")
-                st.metric("Bid Premium", f"${csp['bid']:.2f}")
-                st.metric("Yield", f"{csp['premium_yield']:.2f}%")
-                st.metric("Annualized Yield", f"{csp['annualized']:.2f}%")
-                st.metric("IV", f"{csp['iv']:.1f}%")
-                st.metric("Delta", f"{csp['delta']:.2f}")
+                st.metric("Strike", f"${_fmt(csp['strike'], decimals=2)}")
+                st.metric("Bid Premium", f"${_fmt(csp['bid'], decimals=2)}")
+                st.metric("Yield", _fmt(csp['premium_yield'], suffix='%'))
+                st.metric("Annualized Yield", _fmt(csp['annualized'], suffix='%'))
+                st.metric("IV", _fmt(csp['iv'], decimals=1, suffix='%'))
+                st.metric("Delta", _fmt(csp['delta'], decimals=2))
             with c2:
                 if cc:
                     st.markdown("**Covered Call (5% OTM)**")
-                    st.metric("Strike", f"${cc['strike']:.2f}")
-                    st.metric("Bid Premium", f"${cc['bid']:.2f}")
-                    st.metric("Yield", f"{cc['premium_yield']:.2f}%")
-                    st.metric("Annualized Yield", f"{cc['annualized']:.2f}%")
-                    st.metric("IV", f"{cc['iv']:.1f}%")
-                    st.metric("Delta", f"{cc['delta']:.2f}")
+                    st.metric("Strike", f"${_fmt(cc['strike'], decimals=2)}")
+                    st.metric("Bid Premium", f"${_fmt(cc['bid'], decimals=2)}")
+                    st.metric("Yield", _fmt(cc['premium_yield'], suffix='%'))
+                    st.metric("Annualized Yield", _fmt(cc['annualized'], suffix='%'))
+                    st.metric("IV", _fmt(cc['iv'], decimals=1, suffix='%'))
+                    st.metric("Delta", _fmt(cc['delta'], decimals=2))
                 else:
                     st.markdown("**Covered Call**")
                     st.info("Mark ticker as 'Owned' above to see CC data.")
-            st.caption(f"HV30: {r.get('hv30', '—')}% | IV/HV: {round(csp['iv']/r['hv30'],2) if r.get('hv30') else '—'}")
+            st.caption(f"HV30: {_fmt(r.get('hv30'), suffix='%')} | IV/HV: {_fmt(round(csp['iv']/r['hv30'],2) if r.get('hv30') else None, decimals=2)}")
