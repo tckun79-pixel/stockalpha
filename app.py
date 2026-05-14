@@ -319,7 +319,7 @@ st.markdown(f"""
     <div style="font-size:1.6rem;font-weight:700;color:#e8eaf0;
                 font-family:'Courier New',monospace">{currency}{cur_price:,.2f}</div>
     <div style="font-size:.82rem;color:{chg_col}">
-      {chg_arrow} {abs(chg):.2f} ({abs(chg_pct * 100):.2f}%)</div>
+      {chg_arrow} {abs(chg):.2f} ({abs(chg_pct):.2f}%)</div>
     <div style="font-size:.72rem;color:#5a5d6e">Mkt Cap: {mcap_str}</div>
   </div>
 </div>""", unsafe_allow_html=True)
