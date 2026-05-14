@@ -51,18 +51,66 @@ def _score_headline_via_api(headline: str) -> str:
         return "Neutral"
 
 
+def _extract_title(item: dict) -> str:
+    """Extract headline text from a yfinance news item.
+
+    yfinance structures news items inconsistently:
+      - Old format: title at the top level
+      - New format: title nested under content.title
+    """
+    if not isinstance(item, dict):
+        return ""
+
+    content = item.get("content")
+    if isinstance(content, dict):
+        title = content.get("title")
+        if title and isinstance(title, str):
+            return title.strip()
+
+    title = item.get("title")
+    if title and isinstance(title, str):
+        return title.strip()
+
+    return ""
+
+
+def _extract_timestamp(item: dict) -> float | None:
+    """Extract a UNIX timestamp from a yfinance news item.
+
+    New format: content.pubDate (ISO 8601 string)
+    Old format: providerPublishTime (int)
+    """
+    if not isinstance(item, dict):
+        return None
+
+    content = item.get("content")
+    if isinstance(content, dict):
+        pub_date = content.get("pubDate")
+        if pub_date and isinstance(pub_date, str):
+            try:
+                return datetime.fromisoformat(pub_date.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                pass
+
+    ts = item.get("providerPublishTime")
+    if isinstance(ts, (int, float)):
+        return float(ts)
+
+    return None
+
+
 def _score_headlines(headlines: list[dict]) -> list[dict]:
     """Score a batch of headlines via OpenRouter, one API call per headline."""
     results = []
     for item in headlines:
-        title = item.get("title", "").strip()
+        title = _extract_title(item)
         if not title:
             continue
         sentiment = _score_headline_via_api(title)
         results.append({
             "title": title,
             "sentiment": sentiment,
-            "timestamp": item.get("providerPublishTime"),
+            "timestamp": _extract_timestamp(item),
         })
     return results
 

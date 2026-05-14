@@ -85,17 +85,98 @@ def get_next_earnings_date(info: dict) -> Optional[dict]:
 def get_earnings_history(ticker: str) -> Optional[pd.DataFrame]:
     """
     Fetch last 8 quarters of EPS actual vs estimate from yfinance earnings history.
-    Returns DataFrame with quarter, estimated, actual, surprise %.
+    Tries multiple yfinance attributes in order: earnings_dates, earnings_history,
+    quarterly_earnings. Returns whatever is available, or an empty DataFrame with
+    a clear message if all are None.
     """
     try:
         yf_obj = yf.Ticker(ticker)
-        earnings = yf_obj.earnings_dates
     except Exception:
         return None
 
-    if earnings is None or earnings.empty:
-        return None
+    # Try attributes in order of preference
+    earnings = None
+    source = None
+    for attr, name in [
+        ("earnings_dates", "earnings_dates"),
+        ("earnings_history", "earnings_history"),
+        ("quarterly_earnings", "quarterly_earnings"),
+    ]:
+        try:
+            candidate = getattr(yf_obj, attr, None)
+            if candidate is not None and not (isinstance(candidate, pd.DataFrame) and candidate.empty):
+                earnings = candidate
+                source = name
+                break
+        except Exception:
+            continue
 
+    if earnings is None:
+        return pd.DataFrame(columns=["Quarter", "Estimate", "Actual", "Beat", "Surprise %"])
+
+    # earnings_history returns a DataFrame with a different structure
+    if source == "earnings_history":
+        earnings = earnings.sort_index(ascending=False).head(8)
+        rows = []
+        for idx, row in earnings.iterrows():
+            try:
+                est = row.get("Estimate")
+                actual = row.get("Actual")
+            except Exception:
+                continue
+            if pd.isna(est) and pd.isna(actual):
+                continue
+            est_v = float(est) if pd.notna(est) else None
+            act_v = float(actual) if pd.notna(actual) else None
+
+            beat = None
+            surp_pct = None
+            if est_v is not None and act_v is not None and est_v != 0:
+                beat = act_v >= est_v
+                surp_pct = round((act_v - est_v) / abs(est_v) * 100, 2)
+
+            try:
+                quarter_str = idx.strftime("%b %Y") if hasattr(idx, "strftime") else str(idx)[:7]
+            except Exception:
+                continue
+
+            rows.append({
+                "Quarter": quarter_str,
+                "Estimate": est_v,
+                "Actual": act_v,
+                "Beat": beat,
+                "Surprise %": surp_pct,
+            })
+        return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["Quarter", "Estimate", "Actual", "Beat", "Surprise %"])
+
+    # quarterly_earnings returns a DataFrame with 'revenue' and 'earnings' columns
+    if source == "quarterly_earnings":
+        earnings = earnings.sort_index(ascending=False).head(8)
+        rows = []
+        for idx, row in earnings.iterrows():
+            try:
+                actual = row.get("earnings")
+            except Exception:
+                continue
+            if pd.isna(actual):
+                continue
+            act_v = float(actual) if pd.notna(actual) else None
+
+            try:
+                quarter_str = idx.strftime("%b %Y") if hasattr(idx, "strftime") else str(idx)[:7]
+            except Exception:
+                continue
+
+            rows.append({
+                "Quarter": quarter_str,
+                "Estimate": None,
+                "Actual": act_v,
+                "Beat": None,
+                "Surprise %": None,
+            })
+        return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["Quarter", "Estimate", "Actual", "Beat", "Surprise %"])
+
+    # earnings_dates (original path)
     earnings = earnings.sort_index(ascending=False).head(8)
 
     rows = []
@@ -129,7 +210,7 @@ def get_earnings_history(ticker: str) -> Optional[pd.DataFrame]:
             "Surprise %": surp_pct,
         })
 
-    return pd.DataFrame(rows) if rows else None
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["Quarter", "Estimate", "Actual", "Beat", "Surprise %"])
 
 
 def compute_avg_post_earnings_move(price_history: pd.DataFrame, earnings_dates: list, lookback_quarters: int = 8) -> Optional[dict]:
