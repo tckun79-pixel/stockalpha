@@ -3,9 +3,11 @@ data_fetcher.py — Market-aware ticker data fetcher using yfinance.
 Supports US (no suffix), SG (.SI), HK (.HK) tickers.
 """
 
+import streamlit as st
 import yfinance as yf
 import pandas as pd
 from typing import Optional
+from datetime import datetime
 
 
 def detect_market(ticker: str) -> str:
@@ -26,6 +28,7 @@ def normalize_ticker(ticker: str, market_override: str = "Auto") -> str:
     return ticker
 
 
+@st.cache_data(ttl=3600)
 def fetch_all(ticker_raw: str, market_override: str = "Auto") -> dict:
     ticker = normalize_ticker(ticker_raw, market_override)
     market = detect_market(ticker)
@@ -40,6 +43,7 @@ def fetch_all(ticker_raw: str, market_override: str = "Auto") -> dict:
         "income_stmt": pd.DataFrame(),
         "balance_sheet": pd.DataFrame(),
         "cashflow": pd.DataFrame(),
+        "earnings_dates": [],
     }
 
     try:
@@ -59,6 +63,22 @@ def fetch_all(ticker_raw: str, market_override: str = "Auto") -> dict:
             result["error"] = f"No price history for '{ticker}'."
             return result
         result["price_history"] = hist
+
+        # Extract earnings timestamps for post-earnings move analysis
+        earnings_ts = info.get("earningsTimestamp")
+        if earnings_ts is not None:
+            if isinstance(earnings_ts, list):
+                earnings_ts = earnings_ts[-1]
+            # fetch quarterly earnings dates for historical lookback
+            try:
+                earnings_df = yf_obj.earnings_dates
+                if earnings_df is not None and not earnings_df.empty:
+                    result["earnings_dates"] = [
+                        ts.to_pydatetime().timestamp()
+                        for ts in earnings_df.index[:12]
+                    ]
+            except Exception:
+                pass
 
         inc = yf_obj.quarterly_income_stmt
         bal = yf_obj.quarterly_balance_sheet

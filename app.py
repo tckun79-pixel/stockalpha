@@ -35,6 +35,12 @@ from modules.comparison    import (
     build_correlation_matrix,
 )
 from modules.ai_summary import get_ai_summary, parse_ai_sections
+from modules.ticker_analysis import (
+    compute_iv_rank_percentile,
+    get_next_earnings_date,
+    get_earnings_history,
+    compute_avg_post_earnings_move,
+)
 
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
@@ -103,6 +109,10 @@ for _key, _default in [
     ("chart",           None),
     ("fc",              None),
     ("ai_summary",      None),
+    ("iv_data",         None),
+    ("next_er",         None),
+    ("earnings_hist",   None),
+    ("post_move",       None),
     ("cmp_datasets",    {}),
     ("cmp_period",      "1Y"),
     ("cmp_tickers",     ""),
@@ -191,6 +201,14 @@ if run_btn and ticker_input:
             _signals,
         )
 
+    # Ticker analysis (IV Rank, earnings, post-earnings move)
+    _iv_data = compute_iv_rank_percentile(_data["price_history"])
+    _next_er = get_next_earnings_date(_data["info"])
+    _earnings_hist = get_earnings_history(_data["ticker"])
+    _post_move = compute_avg_post_earnings_move(
+        _data["price_history"], _data["earnings_dates"]
+    )
+
     st.session_state.update({
         "analysis_done": True,
         "analysis_data": _data,
@@ -202,6 +220,10 @@ if run_btn and ticker_input:
         "chart":         _chart,
         "fc":            _fc,
         "ai_summary":    _ai,
+        "iv_data":       _iv_data,
+        "next_er":       _next_er,
+        "earnings_hist": _earnings_hist,
+        "post_move":     _post_move,
         # Reset compare when new ticker is run
         "cmp_datasets":  {},
         "cmp_ran":       False,
@@ -223,6 +245,10 @@ perf          = st.session_state["perf"]
 chart         = st.session_state["chart"]
 fc            = st.session_state["fc"]
 ai_summary    = st.session_state["ai_summary"]
+iv_data       = st.session_state["iv_data"]
+next_er       = st.session_state["next_er"]
+earnings_hist = st.session_state["earnings_hist"]
+post_move     = st.session_state["post_move"]
 
 currency  = get_currency_symbol(market, info)
 cur_price = get_current_price(info) or float(price_history["Close"].iloc[-1])
@@ -266,9 +292,10 @@ st.markdown(f"""
 
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Fundamental",
     "📈 Technical",
+    "💰 Earnings & IV",
     "🔮 Forecast (6–12M)",
     "⚖️ Compare Tickers",
 ])
@@ -441,9 +468,172 @@ with tab2:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — FORECAST + AI SUMMARY
+# TAB 3 — EARNINGS & IV
 # ══════════════════════════════════════════════════════════════════════════════
 with tab3:
+    st.markdown("### IV Rank & IV Percentile")
+    if iv_data and iv_data.get("iv_rank") is not None:
+        iv1, iv2, iv3 = st.columns(3)
+        with iv1:
+            render_metric_card("IV Rank", f"{iv_data['iv_rank']:.0f}%",
+                               "0–100 scale, higher = richer vol",
+                               iv_data["iv_rank"] > 50)
+        with iv2:
+            render_metric_card("IV Percentile", f"{iv_data['iv_percentile']:.0f}%",
+                               "Percentile over 252 days",
+                               iv_data["iv_percentile"] > 50)
+        with iv3:
+            render_metric_card("Hist. Vol (20d Ann.)", f"{iv_data.get('current_vol', 0):.1f}%",
+                               "Annualized from daily returns")
+    else:
+        st.info("Insufficient price history (< 252 trading days) for IV Rank / Percentile computation.")
+
+    st.markdown("---")
+    st.markdown("### Next Earnings Date")
+
+    if next_er:
+        er_col1, er_col2 = st.columns([1, 2])
+        with er_col1:
+            if next_er["is_past"]:
+                render_metric_card("Last Earnings", next_er["date"],
+                                   f"{abs(next_er['days_away'])} days ago", False)
+            else:
+                render_metric_card("Next Earnings", next_er["date"],
+                                   f"{next_er['days_away']} days away",
+                                   next_er["days_away"] > 7)
+        with er_col2:
+            # Mini countdown bar
+            if not next_er["is_past"]:
+                pct_done = max(0, min(100, 100 - (next_er["days_away"] / 90 * 100)))
+                bar_color = "#26a69a" if next_er["days_away"] > 14 else "#f59e0b" if next_er["days_away"] > 7 else "#ef5350"
+                st.markdown(f"""
+                <div style="background:#1a1d27;border:1px solid #2a2d3a;border-radius:8px;padding:16px 20px;height:80px">
+                  <div style="font-size:.72rem;color:#8b8fa8;margin-bottom:8px">Days until next earnings</div>
+                  <div style="display:flex;align-items:center;gap:12px">
+                    <div style="flex:1;height:8px;background:#2a2d3a;border-radius:4px;overflow:hidden">
+                      <div style="height:100%;width:{pct_done:.0f}%;background:{bar_color};border-radius:4px;transition:width 0.3s"></div>
+                    </div>
+                    <span style="font-size:1.1rem;font-weight:700;color:{bar_color};font-family:'Courier New',monospace">{next_er['days_away']}d</span>
+                  </div>
+                </div>""", unsafe_allow_html=True)
+    else:
+        st.info("No earnings date information available for this ticker.")
+
+    st.markdown("---")
+    st.markdown("### EPS Surprise History (Last 8 Quarters)")
+
+    if earnings_hist is not None and not earnings_hist.empty:
+        e_beat_count = earnings_hist["Beat"].sum() if "Beat" in earnings_hist.columns else 0
+        e_total = len(earnings_hist)
+        e_beat_pct = round(e_beat_count / e_total * 100, 0) if e_total > 0 else 0
+
+        eh1, eh2, eh3 = st.columns(3)
+        with eh1:
+            render_metric_card("EPS Beat Rate", f"{e_beat_pct:.0f}%",
+                               f"{e_beat_count}/{e_total} quarters")
+        with eh2:
+            avg_surprise = earnings_hist["Surprise %"].mean() if "Surprise %" in earnings_hist.columns else None
+            render_metric_card("Avg Surprise", f"{avg_surprise:+.1f}%" if avg_surprise is not None else "—",
+                               "Mean EPS surprise %")
+        with eh3:
+            if post_move:
+                render_metric_card("Avg Post-Earnings Move", f"±{post_move['avg_abs_move_pct']:.2f}%",
+                                   f"{post_move['positive_count']} up / {post_move['negative_count']} down")
+            else:
+                render_metric_card("Avg Post-Earnings Move", "—",
+                                   "Insufficient data")
+
+        # EPS Surprise Table
+        headers = ["Quarter", "Estimate", "Actual", "Beat", "Surprise %"]
+        header_html = "".join(
+            f'<th style="padding:8px 12px;text-align:right;color:#8b8fa8;font-size:.75rem">{h}</th>'
+            for h in headers
+        )
+        rows_html = ""
+        for idx, (_, row) in enumerate(earnings_hist.iterrows()):
+            bg = "#1e2130" if idx % 2 == 0 else "#1a1d27"
+            est = f"{row['Estimate']:.2f}" if pd.notna(row.get("Estimate")) else "—"
+            act = f"{row['Actual']:.2f}" if pd.notna(row.get("Actual")) else "—"
+
+            beat_v = row.get("Beat")
+            if beat_v is True:
+                beat_disp = '<span style="color:#26a69a">✓ Beat</span>'
+            elif beat_v is False:
+                beat_disp = '<span style="color:#ef5350">✗ Miss</span>'
+            else:
+                beat_disp = "—"
+
+            surp = row.get("Surprise %")
+            surp_disp = (
+                f'<span style="color:#26a69a">{surp:+.2f}%</span>' if surp is not None and surp >= 0
+                else f'<span style="color:#ef5350">{surp:+.2f}%</span>' if surp is not None
+                else "—"
+            )
+
+            rows_html += (
+                f'<tr style="background:{bg}">'
+                f'<td style="padding:8px 12px;color:#e8eaf0;font-family:\'Courier New\',monospace;font-size:.82rem">{row["Quarter"]}</td>'
+                f'<td style="padding:8px 12px;text-align:right;color:#e8eaf0;font-family:\'Courier New\',monospace;font-size:.82rem">{est}</td>'
+                f'<td style="padding:8px 12px;text-align:right;color:#e8eaf0;font-family:\'Courier New\',monospace;font-size:.82rem">{act}</td>'
+                f'<td style="padding:8px 12px;text-align:right;font-size:.82rem">{beat_disp}</td>'
+                f'<td style="padding:8px 12px;text-align:right;font-size:.82rem">{surp_disp}</td>'
+                f'</tr>'
+            )
+
+        st.markdown(f"""
+        <div style="overflow-x:auto;border-radius:8px;border:1px solid #2a2d3a">
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="border-bottom:1px solid #2a2d3a">{header_html}</tr></thead>
+            <tbody>{rows_html}</tbody>
+          </table>
+        </div>""", unsafe_allow_html=True)
+    else:
+        st.info("No EPS estimate history available for this ticker.")
+
+    if post_move and post_move.get("individual_moves"):
+        st.markdown("---")
+        st.markdown("### Post-Earnings Price Reactions")
+        import plotly.graph_objects as go
+
+        moves = post_move["individual_moves"]
+        labels = [f"Q{-i}" if i < 0 else f"Q+{i+1}" for i in range(len(moves) - 1, -1, -1)]
+        colors = ["#26a69a" if m >= 0 else "#ef5350" for m in moves]
+
+        f = go.Figure()
+        f.add_trace(go.Bar(
+            x=labels,
+            y=moves,
+            marker_color=colors,
+            text=[f"{m:+.2f}%" for m in moves],
+            textposition="outside",
+            textfont=dict(size=10, color="#e8eaf0"),
+        ))
+        if post_move.get("avg_abs_move_pct"):
+            f.add_hline(
+                y=post_move["avg_abs_move_pct"],
+                line_dash="dash",
+                line_color="#60a5fa",
+                annotation_text=f"Avg abs: ±{post_move['avg_abs_move_pct']:.2f}%",
+                annotation_font=dict(size=10, color="#60a5fa"),
+            )
+        f.update_layout(
+            title="1-Day Post-Earnings Move (%)",
+            height=320,
+            plot_bgcolor="#0f1117",
+            paper_bgcolor="#1a1d27",
+            font=dict(color="#e8eaf0", size=10),
+            xaxis=dict(gridcolor="#1e2433"),
+            yaxis=dict(gridcolor="#1e2433", zerolinecolor="#2a2d3a"),
+            margin=dict(l=10, r=10, t=40, b=10),
+            showlegend=False,
+        )
+        st.plotly_chart(f, width="stretch")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — FORECAST + AI SUMMARY
+# ══════════════════════════════════════════════════════════════════════════════
+with tab4:
     st.error(fc["disclaimer"], icon="⚠️")
 
     if fc.get("error"):
@@ -537,9 +727,9 @@ with tab3:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 4 — COMPARE TICKERS
+# TAB 5 — COMPARE TICKERS
 # ══════════════════════════════════════════════════════════════════════════════
-with tab4:
+with tab5:
     st.markdown("### ⚖️ Multi-Ticker Comparison")
     st.markdown(
         f"<div style='font-size:.82rem;color:#8b8fa8;margin-bottom:16px'>"
