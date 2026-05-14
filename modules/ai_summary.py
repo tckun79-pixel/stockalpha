@@ -1,5 +1,5 @@
 """
-ai_summary.py — Objective AI-generated stock summary via OpenRouter + DeepSeek V3.2
+ai_summary.py — Objective AI-generated stock summary via OpenRouter + DeepSeek V4 Flash
 """
 
 import os
@@ -96,7 +96,7 @@ def get_ai_summary(ticker: str, info: dict, fund: dict, fc: dict,
         prompt = build_prompt(ticker, info, fund, fc, perf, signals)
 
         response = client.chat.completions.create(
-            model="deepseek/deepseek-v3.2",
+            model="deepseek/deepseek-v4-flash",
             messages=[
                 {
                     "role": "system",
@@ -119,7 +119,7 @@ def get_ai_summary(ticker: str, info: dict, fund: dict, fc: dict,
         text = response.choices[0].message.content.strip()
         return {
             "text":  text,
-            "model": "DeepSeek V3.2 via OpenRouter",
+            "model": "DeepSeek V4 Flash via OpenRouter",
             "error": None,
         }
 
