@@ -42,6 +42,7 @@ from modules.ticker_analysis import (
     compute_avg_post_earnings_move,
 )
 from modules.search_history import push as history_push, pop as history_pop, clear as history_clear
+from modules.news_sentiment import fetch_and_score_news
 
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
@@ -137,6 +138,7 @@ for _key, _default in [
     ("next_er",         None),
     ("earnings_hist",   None),
     ("post_move",       None),
+    ("news_sentiment",  None),
     ("cmp_datasets",    {}),
     ("cmp_period",      "1Y"),
     ("cmp_tickers",     ""),
@@ -236,6 +238,9 @@ if run_btn and ticker_input:
         _data["price_history"], _data.get("earnings_dates", None)
     )
 
+    with st.spinner("📰 Scoring news sentiment..."):
+        _news_sentiment = fetch_and_score_news(_data["ticker"])
+
     st.session_state.update({
         "analysis_done": True,
         "analysis_data": _data,
@@ -251,6 +256,7 @@ if run_btn and ticker_input:
         "next_er":       _next_er,
         "earnings_hist": _earnings_hist,
         "post_move":     _post_move,
+        "news_sentiment": _news_sentiment,
         # Reset compare when new ticker is run
         "cmp_datasets":  {},
         "cmp_ran":       False,
@@ -276,6 +282,7 @@ iv_data       = st.session_state["iv_data"]
 next_er       = st.session_state["next_er"]
 earnings_hist = st.session_state["earnings_hist"]
 post_move     = st.session_state["post_move"]
+news_sent     = st.session_state["news_sentiment"]
 
 currency  = get_currency_symbol(market, info)
 cur_price = get_current_price(info) or float(price_history["Close"].iloc[-1])
@@ -655,6 +662,74 @@ with tab3:
             showlegend=False,
         )
         st.plotly_chart(f, width="stretch")
+
+    # ── NEWS SENTIMENT ───────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 📰 News Sentiment")
+
+    if news_sent is None or not news_sent.get("headlines"):
+        st.info("No recent news headlines available for this ticker.")
+    else:
+        sm = news_sent["summary"]
+        ns1, ns2, ns3, ns4 = st.columns(4)
+        with ns1:
+            render_metric_card("Positive", str(sm["positive"]), f"of {sm['total']} headlines", sm["positive"] >= sm["negative"])
+        with ns2:
+            render_metric_card("Neutral", str(sm["neutral"]), f"of {sm['total']} headlines")
+        with ns3:
+            render_metric_card("Negative", str(sm["negative"]), f"of {sm['total']} headlines", False)
+        with ns4:
+            pct_pos = round(sm["positive"] / sm["total"] * 100, 0) if sm["total"] else 0
+            render_metric_card("Positive %", f"{pct_pos:.0f}%", "of recent headlines", pct_pos >= 50)
+
+        if sm["recent_negative"]:
+            st.markdown("""
+            <div style="background:#2d1b1b;border:1px solid #ef5350;border-radius:8px;
+                        padding:12px 18px;margin:12px 0">
+              <span style="color:#ef5350;font-weight:600;font-size:.9rem">⚠ NEGATIVE SENTIMENT ALERT</span>
+              <span style="color:#c4c6d4;font-size:.82rem;margin-left:8px">
+                — Majority of headlines in the last 48 hours are negative.
+              </span>
+            </div>""", unsafe_allow_html=True)
+
+        # Headlines table
+        n_headers = ["#", "Headline", "Sentiment"]
+        n_header_html = "".join(
+            f'<th style="padding:8px 12px;text-align:left;color:#8b8fa8;font-size:.75rem">{h}</th>'
+            for h in n_headers
+        )
+        n_rows_html = ""
+        for idx, h in enumerate(news_sent["headlines"]):
+            bg = "#1e2130" if idx % 2 == 0 else "#1a1d27"
+            s = h["sentiment"]
+            dot = {
+                "Positive": '<span style="color:#26a69a">●</span> Positive',
+                "Negative": '<span style="color:#ef5350">●</span> Negative',
+                "Neutral":  '<span style="color:#8b8fa8">●</span> Neutral',
+            }.get(s, "—")
+
+            n_rows_html += (
+                f'<tr style="background:{bg}">'
+                f'<td style="padding:8px 12px;color:#5a5d6e;font-size:.78rem">{idx + 1}</td>'
+                f'<td style="padding:8px 12px;color:#e8eaf0;font-size:.82rem;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{h["title"]}</td>'
+                f'<td style="padding:8px 12px;font-size:.82rem">{dot}</td>'
+                f'</tr>'
+            )
+
+        st.markdown(f"""
+        <div style="overflow-x:auto;border-radius:8px;border:1px solid #2a2d3a;margin-top:8px">
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="border-bottom:1px solid #2a2d3a">{n_header_html}</tr></thead>
+            <tbody>{n_rows_html}</tbody>
+          </table>
+        </div>""", unsafe_allow_html=True)
+
+        st.markdown(
+            "<div style='font-size:.68rem;color:#5a5d6e;margin-top:6px;font-style:italic'>"
+            "💡 Headlines from yfinance · Sentiment scored via DeepSeek V4 Flash (OpenRouter) · Cached 30 min"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
