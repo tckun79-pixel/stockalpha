@@ -41,6 +41,7 @@ from modules.ticker_analysis import (
     get_earnings_history,
     compute_avg_post_earnings_move,
 )
+from modules.search_history import push as history_push, pop as history_pop, clear as history_clear
 
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
@@ -79,7 +80,35 @@ with st.sidebar:
     }
     market_sel = mmap[market_override]
 
-    run_btn = st.button("🔍 Run Deep Analysis", use_container_width=True, type="primary")
+    # ── Recent Searches row ──────────────────────────────────────────────
+    history = history_pop()
+    if history:
+        hcols = st.columns([0.9, 0.1], gap="small")
+        with hcols[0]:
+            st.markdown(
+                "<div style='font-size:.72rem;color:#8b8fa8;margin-bottom:4px'>Recent</div>",
+                unsafe_allow_html=True,
+            )
+            btn_cols = st.columns(len(history))
+            for i, h_ticker in enumerate(history):
+                with btn_cols[i]:
+                    if st.button(h_ticker, key=f"hist_{i}", use_container_width=True):
+                        st.session_state["hist_ticker"] = h_ticker
+                        st.rerun()
+        with hcols[1]:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("✕", key="clear_history", help="Clear history"):
+                history_clear()
+                st.session_state.pop("hist_ticker", None)
+                st.rerun()
+
+    # If a history button was clicked, override ticker and auto-trigger
+    hist_ticker = st.session_state.pop("hist_ticker", None)
+    if hist_ticker:
+        ticker_input = hist_ticker
+        run_btn = True
+    else:
+        run_btn = st.button("🔍 Run Deep Analysis", use_container_width=True, type="primary")
 
     st.markdown("---")
     st.markdown("""
@@ -117,6 +146,7 @@ for _key, _default in [
     ("cmp_period",      "1Y"),
     ("cmp_tickers",     ""),
     ("cmp_ran",         False),
+    ("hist_ticker",     None),
 ]:
     if _key not in st.session_state:
         st.session_state[_key] = _default
@@ -174,6 +204,8 @@ if run_btn and ticker_input:
         st.error(f"❌ {_data['error']}")
         st.info("💡 US tickers: AAPL | SGX: D05.SI | HKEX: 0700.HK")
         st.stop()
+
+    history_push(ticker_input)
 
     with st.spinner("⚙️ Running fundamental analysis..."):
         _fund = compute_quarterly_metrics(
