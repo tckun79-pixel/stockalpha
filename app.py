@@ -206,7 +206,7 @@ if run_btn and ticker_input:
     _next_er = get_next_earnings_date(_data["info"])
     _earnings_hist = get_earnings_history(_data["ticker"])
     _post_move = compute_avg_post_earnings_move(
-        _data["price_history"], _data["earnings_dates"]
+        _data["price_history"], _data.get("earnings_dates", None)
     )
 
     st.session_state.update({

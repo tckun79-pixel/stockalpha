@@ -100,8 +100,11 @@ def get_earnings_history(ticker: str) -> Optional[pd.DataFrame]:
 
     rows = []
     for idx, row in earnings.iterrows():
-        est = row.get("EPS Estimate")
-        actual = row.get("EPS Actual")
+        try:
+            est = row.get("EPS Estimate")
+            actual = row.get("EPS Actual")
+        except Exception:
+            continue
         if pd.isna(est) and pd.isna(actual):
             continue
         est_v = float(est) if pd.notna(est) else None
@@ -113,7 +116,10 @@ def get_earnings_history(ticker: str) -> Optional[pd.DataFrame]:
             beat = act_v >= est_v
             surp_pct = round((act_v - est_v) / abs(est_v) * 100, 2)
 
-        quarter_str = idx.strftime("%b %Y") if hasattr(idx, "strftime") else str(idx)[:7]
+        try:
+            quarter_str = idx.strftime("%b %Y") if hasattr(idx, "strftime") else str(idx)[:7]
+        except Exception:
+            continue
 
         rows.append({
             "Quarter": quarter_str,
@@ -131,7 +137,10 @@ def compute_avg_post_earnings_move(price_history: pd.DataFrame, earnings_dates: 
     For the last N earnings dates, compute the ±% move 1 day after.
     Returns average absolute move and individual moves.
     """
-    if price_history is None or price_history.empty or not earnings_dates:
+    try:
+        if price_history is None or price_history.empty or not earnings_dates:
+            return None
+    except Exception:
         return None
 
     closes = price_history["Close"]
