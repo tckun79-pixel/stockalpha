@@ -216,7 +216,7 @@ _COL_ORDER = [
 
 
 def render_wheel_scanner():
-    """Main entry point — renders the Wheel Scanner tab content."""
+    """Main entry point — renders the Wheel Scanner in the sidebar expander."""
     st.markdown("### Wheel Strategy Scanner")
     st.markdown(
         "<div style='font-size:.82rem;color:#8b8fa8;margin-bottom:12px'>"
@@ -225,12 +225,12 @@ def render_wheel_scanner():
         unsafe_allow_html=True,
     )
 
-    # ── Input area ───────────────────────────────────────────────────────────
+    # ── Input area with unique 'ws_' key ────────────────────────────────────
     ticker_text = st.text_area(
         "Tickers (comma-separated)",
         value=DEFAULT_TICKERS,
         height=80,
-        key="ws_tickers_input",
+        key="ws_tickers",
     )
     tickers = [t.strip().upper() for t in ticker_text.split(",") if t.strip()]
 
@@ -243,9 +243,7 @@ def render_wheel_scanner():
             unsafe_allow_html=True,
         )
 
-    # ── Owned checkboxes (render before data fetch) ──────────────────────────
-    owned_default = {t: False for t in tickers}
-    # Persist owned state across refreshes
+    # ── Owned checkboxes with 'ws_owned_' key prefix ────────────────────────
     if "ws_owned" not in st.session_state:
         st.session_state["ws_owned"] = {}
     for t in tickers:
@@ -258,7 +256,7 @@ def render_wheel_scanner():
         with owned_cols[i % len(owned_cols)]:
             st.session_state["ws_owned"][t] = st.checkbox(
                 t, value=st.session_state["ws_owned"].get(t, False),
-                key=f"ws_own_{t}",
+                key=f"ws_owned_{t}",
             )
     owned_set = {t for t in tickers if st.session_state["ws_owned"].get(t)}
 
@@ -266,28 +264,27 @@ def render_wheel_scanner():
         st.info("Enter at least one ticker.")
         return
 
-    # ── Fetch & analyze ──────────────────────────────────────────────────────
-    if refresh or "ws_results_cache" not in st.session_state:
+    # ── Refresh-clicked flag pattern ────────────────────────────────────────
+    # On button click, set flag and rerun immediately (data fetched next frame)
+    if refresh:
+        st.session_state["ws_refresh_clicked"] = True
+        st.rerun()
+
+    # If flag is set, fetch fresh data, store in session_state, clear flag
+    if st.session_state.get("ws_refresh_clicked", False):
         with st.spinner("Fetching options data..."):
             results = []
             for t in tickers:
                 r = analyze_ticker(t)
                 results.append(r)
-            st.session_state["ws_results_cache"] = results
-            st.session_state["ws_results_tickers"] = tickers
+            st.session_state["ws_results"] = results
+            st.session_state["ws_refresh_clicked"] = False
 
-    results = st.session_state.get("ws_results_cache", [])
-    cached_tickers = st.session_state.get("ws_results_tickers", [])
-
-    # If tickers changed (user edited text area), re-fetch
-    if tickers != cached_tickers:
-        with st.spinner("Fetching options data..."):
-            results = []
-            for t in tickers:
-                r = analyze_ticker(t)
-                results.append(r)
-            st.session_state["ws_results_cache"] = results
-            st.session_state["ws_results_tickers"] = tickers
+    # Display cached results if available
+    if "ws_results" in st.session_state:
+        results = st.session_state["ws_results"]
+    else:
+        results = []
 
     # ── Build & display DataFrame ────────────────────────────────────────────
     df = build_results_df(results, owned_set)
