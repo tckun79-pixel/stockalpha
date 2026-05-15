@@ -332,8 +332,8 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📈 Technical",
     "💰 Earnings & IV",
     "🔮 Forecast (6–12M)",
+    "🔧 Wheel Scanner",
     "⚖️ Compare Tickers",
-    "🔧 Wheel",
 ])
 
 
