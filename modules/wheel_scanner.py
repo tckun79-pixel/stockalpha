@@ -216,8 +216,8 @@ _COL_ORDER = [
 
 
 def render_wheel_scanner(container=None):
-    """Main entry point — renders the Wheel Scanner in the sidebar expander."""
-    ctx = container if container is not None else st.sidebar
+    """Main entry point — renders the Wheel Scanner."""
+    ctx = container if container is not None else st
     ctx.markdown("### Wheel Strategy Scanner")
     ctx.markdown(
         "<div style='font-size:.82rem;color:#8b8fa8;margin-bottom:12px'>"

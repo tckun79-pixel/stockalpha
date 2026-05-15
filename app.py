@@ -107,10 +107,6 @@ with st.sidebar:
     else:
         run_btn = st.button("🔍 Run Deep Analysis", use_container_width=True, type="primary")
 
-    # ── Wheel Scanner ────────────────────────────────────────────────────
-    with st.sidebar.expander("🔧 Wheel Scanner", expanded=False):
-        render_wheel_scanner(container=st.sidebar)
-
     st.markdown("---")
     st.markdown("""
     <div style="font-size:.75rem;color:#8b8fa8;line-height:1.6">
@@ -331,12 +327,13 @@ st.markdown(f"""
 
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Fundamental",
     "📈 Technical",
     "💰 Earnings & IV",
     "🔮 Forecast (6–12M)",
     "⚖️ Compare Tickers",
+    "🔧 Wheel",
 ])
 
 
@@ -834,9 +831,15 @@ with tab4:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — COMPARE TICKERS
+# TAB 5 — WHEEL SCANNER
 # ══════════════════════════════════════════════════════════════════════════════
 with tab5:
+    render_wheel_scanner()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — COMPARE TICKERS
+# ══════════════════════════════════════════════════════════════════════════════
+with tab6:
     st.markdown("### ⚖️ Multi-Ticker Comparison")
     st.markdown(
         f"<div style='font-size:.82rem;color:#8b8fa8;margin-bottom:16px'>"
